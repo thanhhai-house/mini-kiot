@@ -1,17 +1,30 @@
-import { sb, fmtMoney, esc, stockBadge } from "./app.js";
+import { sb, fmtMoney, esc } from "./app.js";
 
-const ADMIN_EMAIL = "haivothanh0603@gmail.com";
+const ADMIN_EMAIL = "haivothanh0603@gmail.com"; // phải khớp policy SQL
 
 const me = document.getElementById("me");
-const addMsg = document.getElementById("addMsg");
+const msg = document.getElementById("msg");
 
-document.getElementById("sendLink").onclick = sendMagicLink;
-document.getElementById("logout").onclick = async ()=>{ await sb.auth.signOut(); await refreshMe(); await load(); };
+const fileInput = document.getElementById("file");
+const previewImg = document.getElementById("preview");
+const previewText = document.getElementById("previewText");
+
+document.getElementById("login").onclick = login;
+document.getElementById("logout").onclick = logout;
 document.getElementById("add").onclick = addProduct;
 document.getElementById("reload").onclick = load;
 
+fileInput.addEventListener("change", onPickFile);
+
 await refreshMe();
 await load();
+
+function stockBadge(stock){
+  const s = Number(stock||0);
+  if (s <= 0) return `<span class="badge danger">Hết hàng</span>`;
+  if (s <= 3) return `<span class="badge warn">Sắp hết</span>`;
+  return `<span class="badge ok">Còn hàng</span>`;
+}
 
 async function refreshMe(){
   const { data: { user } } = await sb.auth.getUser();
@@ -19,33 +32,55 @@ async function refreshMe(){
   return user;
 }
 
-async function sendMagicLink(){
-  const email = document.getElementById("email").value.trim();
-  if (email !== ADMIN_EMAIL) return alert("Email admin phải là: " + ADMIN_EMAIL);
-
-  const redirectTo = location.origin + location.pathname; // quay lại admin.html
-  const { error } = await sb.auth.signInWithOtp({ email, options: { emailRedirectTo: redirectTo } });
-  if (error) return alert(error.message);
-  alert("Đã gửi link đăng nhập về email. Mở mail và bấm link là vào admin.");
-}
-
 function requireAdmin(user){
   if(!user) throw new Error("Bạn chưa đăng nhập admin.");
-  if(user.email !== ADMIN_EMAIL) throw new Error("Không đúng email admin.");
+  if(user.email !== ADMIN_EMAIL) throw new Error("Sai email admin (không đúng policy).");
 }
 
-async function uploadImage(file, id){
-  if(!file) return "";
+async function login(){
+  msg.textContent = "";
+  const email = document.getElementById("email").value.trim();
+  const password = document.getElementById("password").value;
+
+  const { error } = await sb.auth.signInWithPassword({ email, password });
+  if (error) return alert("Login thất bại: " + error.message);
+
+  await refreshMe();
+  await load();
+}
+
+async function logout(){
+  await sb.auth.signOut();
+  await refreshMe();
+  await load();
+}
+
+async function onPickFile(){
+  const file = fileInput.files?.[0];
+  if(!file){
+    previewImg.style.display="none";
+    previewText.textContent="Chưa chọn ảnh";
+    return;
+  }
+  const url = URL.createObjectURL(file);
+  previewImg.src = url;
+  previewImg.style.display = "block";
+  previewText.textContent = `Đã chọn: ${file.name} (${Math.round(file.size/1024)} KB)`;
+}
+
+async function uploadImage(file, productId){
+  // upload ảnh lên Storage, trả về public URL
   const ext = (file.name.split(".").pop() || "jpg").toLowerCase();
-  const path = `${id}/${Date.now()}.${ext}`;
-  const { error } = await sb.storage.from("product-images").upload(path, file, { upsert: true });
+  const path = `${productId}/${Date.now()}.${ext}`; // luôn file mới -> không cần UPDATE policy
+  const { error } = await sb.storage.from("product-images").upload(path, file, { upsert: false });
   if (error) throw error;
+
   const { data } = sb.storage.from("product-images").getPublicUrl(path);
   return data.publicUrl;
 }
 
 async function addProduct(){
-  addMsg.textContent = "";
+  msg.textContent = "";
   const { data: { user } } = await sb.auth.getUser();
   try{
     requireAdmin(user);
@@ -58,19 +93,32 @@ async function addProduct(){
     const price = Number(document.getElementById("price").value || 0);
     const stock = Number(document.getElementById("stock").value || 0);
     const info = document.getElementById("info").value.trim();
-    const file = document.getElementById("file").files[0];
+    const file = fileInput.files?.[0];
 
-    if(!id || !oem || !name) return alert("Thiếu ID / OEM / Tên");
+    if(!id || !oem || !name) throw new Error("Thiếu ID / OEM / Tên");
 
     let image_url = "";
-    if(file) image_url = await uploadImage(file, id);
+    if(file){
+      // Preview đã có; upload thật khi bấm Thêm
+      image_url = await uploadImage(file, id);
+    }
 
+    // Insert product
     const { error } = await sb.from("products").insert([{
-      id, oem, name, brand, category, info, price, stock, image_url
+      id, oem, name, category, brand, info,
+      price, stock,
+      image_url,
+      updated_at: new Date().toISOString()
     }]);
-    if (error) return alert(error.message);
 
-    addMsg.textContent = "Đã thêm sản phẩm!";
+    if (error) throw error;
+
+    msg.textContent = "✅ Đã thêm sản phẩm thành công!";
+    // reset form nhanh
+    fileInput.value = "";
+    previewImg.style.display="none";
+    previewText.textContent="Chưa chọn ảnh";
+
     await load();
   }catch(e){
     alert(e.message || e);
@@ -90,16 +138,18 @@ async function adjustStock(id, type){
     const { data: p, error: e1 } = await sb.from("products").select("*").eq("id", id).single();
     if(e1) throw e1;
 
-    const before = p.stock;
+    const before = Number(p.stock||0);
     const after = type==="IN" ? before + qty : before - qty;
-    if(after < 0) return alert("Không đủ tồn để xuất");
+    if(after < 0) throw new Error("Không đủ tồn để xuất");
 
     const { error: e2 } = await sb.from("products")
       .update({ stock: after, updated_at: new Date().toISOString() })
       .eq("id", id);
     if(e2) throw e2;
 
-    await sb.from("stock_logs").insert([{ type, product_id: id, qty, before_stock: before, after_stock: after, note }]);
+    const { error: e3 } = await sb.from("stock_logs")
+      .insert([{ type, product_id: id, qty, before_stock: before, after_stock: after, note }]);
+    if(e3) throw e3;
 
     await load();
   }catch(e){
@@ -131,13 +181,21 @@ async function changeImage(id){
   try{
     requireAdmin(user);
 
+    // chọn file + preview confirm
     const inp = document.createElement("input");
     inp.type="file"; inp.accept="image/*";
     inp.onchange = async ()=>{
-      const file = inp.files[0];
+      const file = inp.files?.[0];
       if(!file) return;
+
+      const local = URL.createObjectURL(file);
+      const ok = confirm("Xác nhận cập nhật hình ảnh mới cho sản phẩm " + id + " ?");
+      if(!ok) return;
+
+      // upload
       const url = await uploadImage(file, id);
 
+      // update product image_url
       const { error } = await sb.from("products")
         .update({ image_url: url, updated_at: new Date().toISOString() })
         .eq("id", id);
@@ -152,7 +210,8 @@ async function changeImage(id){
 }
 
 async function load(){
-  await refreshMe();
+  const { data: { user } } = await sb.auth.getUser();
+  const isAdmin = !!user && user.email === ADMIN_EMAIL;
 
   const k = (document.getElementById("q").value || "").trim();
   let q = sb.from("products").select("*").order("name");
@@ -172,7 +231,7 @@ async function load(){
           <b>ID</b><div>${esc(p.id)}</div>
           <b>OEM</b><div>${esc(p.oem)}</div>
           <b>Thương hiệu</b><div>${esc(p.brand || "")}</div>
-          <b>Giá bán</b><div><b>${fmtMoney(p.price)}</b></div>
+          <b>Giá</b><div><b>${fmtMoney(p.price)}</b></div>
           <b>Số lượng</b><div><b>${Number(p.stock||0)}</b></div>
         </div>
 
@@ -183,12 +242,16 @@ async function load(){
 
         ${p.info ? `<div class="muted" style="margin-top:8px">${esc(p.info)}</div>` : ""}
 
-        <div class="actions">
-          <button class="btn" onclick="window._in('${p.id}')">Nhập</button>
-          <button class="btn" onclick="window._out('${p.id}')">Xuất</button>
-          <button class="btn" onclick="window._price('${p.id}', ${Number(p.price||0)})">Giá</button>
-          <button class="btn" onclick="window._img('${p.id}')">Up hình</button>
-        </div>
+        ${
+          isAdmin
+          ? `<div class="actions">
+              <button class="btn" onclick="window._in('${p.id}')">Nhập hàng</button>
+              <button class="btn" onclick="window._out('${p.id}')">Xuất hàng</button>
+              <button class="btn" onclick="window._price('${p.id}', ${Number(p.price||0)})">Chỉnh giá</button>
+              <button class="btn" onclick="window._img('${p.id}')">Đổi hình</button>
+            </div>`
+          : `<div class="muted" style="margin-top:10px">🔒 Bạn cần đăng nhập admin để thao tác</div>`
+        }
       </div>
     </div>
   `).join("") || `<div class="muted">Chưa có dữ liệu.</div>`;
