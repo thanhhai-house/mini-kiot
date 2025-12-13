@@ -5,6 +5,8 @@ export const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiO
 
 export const sb = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
+export const ADMIN_EMAIL = "haivothanh0603@gmail.com";
+
 export const fmtMoney = (n) => Number(n || 0).toLocaleString("vi-VN") + " đ";
 export const esc = (s) =>
   String(s ?? "").replace(/[&<>"']/g, (m) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[m]));
