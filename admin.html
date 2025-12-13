@@ -61,6 +61,23 @@
         <button class="btn" id="reload">Tải lại</button>
       </div>
     </div>
+<div class="panel">
+  <div style="font-weight:950;margin-bottom:8px">Lịch sử nhập/xuất</div>
+  <div class="row">
+    <input id="log_q" placeholder="Lọc theo ID / OEM / Tên (tuỳ chọn)" />
+    <select id="log_type">
+      <option value="">Tất cả</option>
+      <option value="IN">Nhập</option>
+      <option value="OUT">Xuất</option>
+    </select>
+    <button class="btn" id="log_reload">Tải lịch sử</button>
+    <span class="muted" id="log_count"></span>
+  </div>
+
+  <div style="overflow:auto;margin-top:10px">
+    <table style="width:100%;border-collapse:collapse" id="log_table"></table>
+  </div>
+</div>
 
     <div id="grid" class="grid"></div>
 
