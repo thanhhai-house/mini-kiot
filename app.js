@@ -8,10 +8,3 @@ export const sb = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 export const fmtMoney = (n) => Number(n || 0).toLocaleString("vi-VN") + " đ";
 export const esc = (s) =>
   String(s ?? "").replace(/[&<>"']/g, (m) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[m]));
-
-export function stockBadge(stock) {
-  const s = Number(stock || 0);
-  if (s <= 0) return `<span class="badge danger">Hết hàng</span>`;
-  if (s <= 3) return `<span class="badge warn">Sắp hết</span>`;
-  return `<span class="badge ok">Còn hàng</span>`;
-}
