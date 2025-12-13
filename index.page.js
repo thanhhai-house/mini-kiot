@@ -1,4 +1,4 @@
-import { sb, fmtMoney, esc, stockBadge } from "./app.js";
+import { sb, fmtMoney, esc } from "./app.js";
 
 const elQ = document.getElementById("q");
 const elCategory = document.getElementById("category");
@@ -9,13 +9,19 @@ document.getElementById("apply").onclick = load;
 await loadOptions();
 await load();
 
+function stockBadge(stock){
+  const s = Number(stock||0);
+  if (s <= 0) return `<span class="badge danger">Hết hàng</span>`;
+  if (s <= 3) return `<span class="badge warn">Sắp hết</span>`;
+  return `<span class="badge ok">Còn hàng</span>`;
+}
+
 async function loadOptions(){
   const { data, error } = await sb.from("products").select("category,brand");
   if (error) return alert(error.message);
 
   const cats = [...new Set((data||[]).map(x=>x.category).filter(Boolean))].sort();
   const brs  = [...new Set((data||[]).map(x=>x.brand).filter(Boolean))].sort();
-
   cats.forEach(x => elCategory.add(new Option(x,x)));
   brs.forEach(x => elBrand.add(new Option(x,x)));
 }
@@ -26,9 +32,7 @@ async function load(){
 
   if (elCategory.value) q = q.eq("category", elCategory.value);
   if (elBrand.value) q = q.eq("brand", elBrand.value);
-  if (k) {
-    q = q.or(`id.ilike.%${k}%,oem.ilike.%${k}%,name.ilike.%${k}%,brand.ilike.%${k}%,info.ilike.%${k}%`);
-  }
+  if (k) q = q.or(`id.ilike.%${k}%,oem.ilike.%${k}%,name.ilike.%${k}%,brand.ilike.%${k}%,info.ilike.%${k}%`);
 
   const { data, error } = await q;
   if (error) return alert(error.message);
@@ -46,7 +50,7 @@ async function load(){
           <b>ID</b><div>${esc(p.id)}</div>
           <b>OEM</b><div>${esc(p.oem)}</div>
           <b>Thương hiệu</b><div>${esc(p.brand || "")}</div>
-          <b>Giá bán</b><div><b>${fmtMoney(p.price)}</b></div>
+          <b>Giá</b><div><b>${fmtMoney(p.price)}</b></div>
           <b>Số lượng</b><div><b>${Number(p.stock||0)}</b></div>
         </div>
 
