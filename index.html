@@ -1,76 +1,37 @@
 <!doctype html>
 <html>
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <link rel="stylesheet" href="style.css" />
-  <title>Kho phụ tùng</title>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <link rel="stylesheet" href="style.css"/>
+  <title>Kho Phụ Tùng</title>
 </head>
 <body>
-  <div class="top">
-    <div class="title">Kho Phụ Tùng</div>
-    <a class="pill" href="admin.html">Admin</a>
-  </div>
-
-  <div class="panel row">
-    <input id="q" placeholder="Tìm ID / OEM / Tên / Thương hiệu..." />
-    <select id="category"><option value="">Tất cả loại</option></select>
-    <select id="brand"><option value="">Tất cả thương hiệu</option></select>
-    <button class="btn" id="apply">Lọc</button>
-  </div>
-
-  <div id="grid" class="grid"></div>
-
-  <script type="module">
-    import { sb, fmt, esc } from "./app.js";
-
-    const q = document.getElementById("q");
-    const category = document.getElementById("category");
-    const brand = document.getElementById("brand");
-    document.getElementById("apply").onclick = load;
-
-    async function loadOptions(){
-      // lấy distinct category/brand
-      const { data } = await sb.from("products").select("category,brand");
-      const cats = [...new Set((data||[]).map(x=>x.category).filter(Boolean))].sort();
-      const brs  = [...new Set((data||[]).map(x=>x.brand).filter(Boolean))].sort();
-      cats.forEach(x=>category.add(new Option(x,x)));
-      brs.forEach(x=>brand.add(new Option(x,x)));
-    }
-
-    async function load(){
-      let query = sb.from("products").select("*").order("name");
-
-      if (category.value) query = query.eq("category", category.value);
-      if (brand.value) query = query.eq("brand", brand.value);
-      if (q.value.trim()){
-        const k = q.value.trim();
-        // search đơn giản (OR)
-        query = query.or(`id.ilike.%${k}%,oem.ilike.%${k}%,name.ilike.%${k}%,brand.ilike.%${k}%,info.ilike.%${k}%`);
-      }
-
-      const { data, error } = await query;
-      if (error) return alert(error.message);
-
-      const grid = document.getElementById("grid");
-      grid.innerHTML = (data||[]).map(p => `
-        <div class="card">
-          ${p.image_url ? `<img src="${p.image_url}">` : `<div class="ph">No image</div>`}
-          <div class="small">
-            <div><b>ID:</b> ${esc(p.id)}</div>
-            <div><b>OEM:</b> ${esc(p.oem)}</div>
-            <div><b>Tên:</b> ${esc(p.name)}</div>
-            <div><b>Thương hiệu:</b> ${esc(p.brand||"")}</div>
-            <div><b>Giá:</b> <b>${fmt(p.price)}</b></div>
-            <div><b>Số lượng còn:</b> <b>${p.stock}</b></div>
-            <div class="muted" style="margin-top:6px">${esc(p.info||"")}</div>
-          </div>
+  <div class="container">
+    <div class="hero">
+      <img src="https://images.unsplash.com/photo-1502877338535-766e1452684a?auto=format&fit=crop&w=1600&q=60">
+      <div class="topbar">
+        <div class="brand">
+          <b>Kho Phụ Tùng Đầu Kéo</b>
+          <span>Xem: ID • OEM • Tên • Thương hiệu • Giá • Số lượng • Thông tin • Hình</span>
         </div>
-      `).join("") || `<div class="muted">Không có dữ liệu</div>`;
-    }
+        <a class="pill primary" href="admin.html">Admin</a>
+      </div>
+    </div>
 
-    await loadOptions();
-    await load();
-  </script>
+    <div class="panel">
+      <div class="row">
+        <input id="q" placeholder="Tìm ID / OEM / Tên / Thương hiệu..." />
+        <select id="category"><option value="">Tất cả loại</option></select>
+        <select id="brand"><option value="">Tất cả thương hiệu</option></select>
+        <button class="btn" id="apply">Lọc</button>
+        <span class="muted" id="count"></span>
+      </div>
+    </div>
+
+    <div id="grid" class="grid"></div>
+
+    <script type="module" src="index.page.js"></script>
+  </div>
 </body>
 </html>
