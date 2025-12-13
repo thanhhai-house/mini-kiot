@@ -1,1 +1,38 @@
+<!doctype html>
+<html>
+<head>
+  <base target="_top">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="top">
+    <div class="title">Admin</div>
+    <a class="pill" href="./">Về khách</a>
+  </div>
+
+  <div class="panel">
+    <h3>Đăng nhập Admin (OTP gửi về: haivothanh0603@gmail.com)</h3>
+    <div class="row">
+      <button class="btn" id="sendOtp">Gửi OTP</button>
+      <input id="otp" placeholder="Nhập OTP 6 số">
+      <button class="btn primary" id="login">Xác nhận</button>
+    </div>
+    <div id="msg" class="muted"></div>
+  </div>
+
+  <div class="panel">
+    <h3>Lọc dữ liệu</h3>
+    <div class="row">
+      <input id="q" placeholder="Tìm OEM / tên / thương hiệu...">
+      <select id="category"><option value="">Tất cả loại</option></select>
+      <select id="brand"><option value="">Tất cả thương hiệu</option></select>
+      <button class="btn" id="apply">Lọc</button>
+    </div>
+  </div>
+
+  <div id="grid" class="grid"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>
 
