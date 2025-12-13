@@ -1,219 +1,63 @@
 <!doctype html>
 <html>
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <link rel="stylesheet" href="style.css" />
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <link rel="stylesheet" href="style.css"/>
   <title>Admin</title>
 </head>
 <body>
-  <div class="top">
-    <div class="title">Admin</div>
-    <a class="pill" href="index.html">Về khách</a>
-  </div>
-
-  <div class="panel">
-    <h3>Đăng nhập admin</h3>
-    <div class="row">
-      <input id="email" value="haivothanh0603@gmail.com" />
-      <input id="password" type="password" placeholder="Haivo2002@" />
-      <button class="btn primary" id="login">Login</button>
-      <button class="btn" id="logout">Logout</button>
-    </div>
-    <div id="me" class="muted"></div>
-  </div>
-
-  <div class="panel">
-    <h3>Thêm sản phẩm</h3>
-    <div class="row">
-      <input id="id" placeholder="ID (001)" />
-      <input id="oem" placeholder="OEM (P559000)" />
-      <input id="name" placeholder="Tên (Lọc Nhớt Cummin)" />
-      <input id="brand" placeholder="Thương hiệu SP (BOSCH...)" />
-    </div>
-    <div class="row">
-      <input id="category" placeholder="Loại" />
-      <input id="price" type="number" placeholder="Giá" />
-      <input id="stock" type="number" placeholder="Số lượng" />
-    </div>
-    <div class="row">
-      <input id="info" placeholder="Thông tin: kích thước ren, chiều cao, dùng xe gì..." />
-      <label class="btn">Up hình<input id="file" type="file" accept="image/*" style="display:none"></label>
-      <button class="btn primary" id="add">Thêm</button>
-    </div>
-  </div>
-
-  <div class="panel row">
-    <input id="q" placeholder="Tìm OEM / tên / thương hiệu..." />
-    <button class="btn" id="reload">Tải lại</button>
-  </div>
-
-  <div id="grid" class="grid"></div>
-
-  <script type="module">
-    import { sb, fmt, esc } from "./app.js";
-
-    const me = document.getElementById("me");
-
-    async function refreshMe(){
-      const { data: { user } } = await sb.auth.getUser();
-      me.textContent = user ? `Đã login: ${user.email}` : "Chưa login";
-      return user;
-    }
-
-    document.getElementById("login").onclick = async ()=>{
-      const email = document.getElementById("email").value.trim();
-      const password = document.getElementById("password").value;
-      const { error } = await sb.auth.signInWithPassword({ email, password });
-      if (error) alert(error.message);
-      await refreshMe();
-      await load();
-    };
-
-    document.getElementById("logout").onclick = async ()=>{
-      await sb.auth.signOut();
-      await refreshMe();
-      await load();
-    };
-
-    async function uploadImage(file, id){
-      if(!file) return "";
-      const ext = file.name.split(".").pop() || "jpg";
-      const path = `${id}.${Date.now()}.${ext}`;
-      const { error } = await sb.storage.from("product-images").upload(path, file, { upsert: true });
-      if (error) throw error;
-      const { data } = sb.storage.from("product-images").getPublicUrl(path);
-      return data.publicUrl;
-    }
-
-    document.getElementById("add").onclick = async ()=>{
-      const user = await refreshMe();
-      if(!user) return alert("Bạn cần login admin");
-
-      const id = document.getElementById("id").value.trim();
-      const oem = document.getElementById("oem").value.trim();
-      const name = document.getElementById("name").value.trim();
-      const brand = document.getElementById("brand").value.trim();
-      const category = document.getElementById("category").value.trim();
-      const price = Number(document.getElementById("price").value || 0);
-      const stock = Number(document.getElementById("stock").value || 0);
-      const info = document.getElementById("info").value.trim();
-      const file = document.getElementById("file").files[0];
-
-      if(!id || !oem || !name) return alert("Thiếu ID/OEM/Tên");
-
-      let image_url = "";
-      if(file) image_url = await uploadImage(file, id);
-
-      const { error } = await sb.from("products").insert([{
-        id, oem, name, brand, category, info, price, stock, image_url
-      }]);
-      if (error) return alert(error.message);
-
-      alert("Đã thêm!");
-      await load();
-    };
-
-    document.getElementById("reload").onclick = load;
-
-    async function adjust(id, type){
-      const user = await refreshMe();
-      if(!user) return alert("Bạn cần login admin");
-
-      const qty = Number(prompt(type==="IN" ? "Nhập số lượng nhập" : "Nhập số lượng xuất") || 0);
-      if(!qty || qty<=0) return;
-
-      const note = prompt("Ghi chú (tuỳ chọn)") || "";
-
-      // lấy tồn hiện tại
-      const { data: p, error: e1 } = await sb.from("products").select("*").eq("id", id).single();
-      if(e1) return alert(e1.message);
-
-      const before = p.stock;
-      const after = type==="IN" ? before + qty : before - qty;
-      if(after < 0) return alert("Không đủ tồn để xuất");
-
-      // update stock
-      const { error: e2 } = await sb.from("products").update({ stock: after, updated_at: new Date().toISOString() }).eq("id", id);
-      if(e2) return alert(e2.message);
-
-      // log
-      await sb.from("stock_logs").insert([{ type, product_id: id, qty, before_stock: before, after_stock: after, note }]);
-
-      await load();
-    }
-
-    async function changePrice(id, cur){
-      const user = await refreshMe();
-      if(!user) return alert("Bạn cần login admin");
-
-      const price = Number(prompt("Giá mới", String(cur)) ?? NaN);
-      if(!Number.isFinite(price) || price<0) return;
-
-      const { error } = await sb.from("products").update({ price, updated_at: new Date().toISOString() }).eq("id", id);
-      if(error) return alert(error.message);
-      await load();
-    }
-
-    async function changeImage(id){
-      const user = await refreshMe();
-      if(!user) return alert("Bạn cần login admin");
-
-      const inp = document.createElement("input");
-      inp.type = "file";
-      inp.accept = "image/*";
-      inp.onchange = async ()=>{
-        const file = inp.files[0];
-        if(!file) return;
-        try{
-          const url = await uploadImage(file, id);
-          const { error } = await sb.from("products").update({ image_url: url, updated_at: new Date().toISOString() }).eq("id", id);
-          if(error) return alert(error.message);
-          await load();
-        }catch(e){ alert(e.message || e); }
-      };
-      inp.click();
-    }
-
-    async function load(){
-      const k = (document.getElementById("q").value || "").trim();
-      let query = sb.from("products").select("*").order("name");
-      if(k) query = query.or(`id.ilike.%${k}%,oem.ilike.%${k}%,name.ilike.%${k}%,brand.ilike.%${k}%,info.ilike.%${k}%`);
-      const { data, error } = await query;
-      if(error) return alert(error.message);
-
-      const grid = document.getElementById("grid");
-      grid.innerHTML = (data||[]).map(p=>`
-        <div class="card">
-          ${p.image_url ? `<img src="${p.image_url}">` : `<div class="ph">No image</div>`}
-          <div class="small">
-            <div><b>ID:</b> ${esc(p.id)}</div>
-            <div><b>OEM:</b> ${esc(p.oem)}</div>
-            <div><b>Tên:</b> ${esc(p.name)}</div>
-            <div><b>Thương hiệu:</b> ${esc(p.brand||"")}</div>
-            <div><b>Giá:</b> <b>${fmt(p.price)}</b></div>
-            <div><b>Còn:</b> <b>${p.stock}</b></div>
-            <div class="muted" style="margin-top:6px">${esc(p.info||"")}</div>
-
-            <div class="actions">
-              <button class="btn" onclick="window._in('${p.id}')">Nhập</button>
-              <button class="btn" onclick="window._out('${p.id}')">Xuất</button>
-              <button class="btn" onclick="window._price('${p.id}', ${Number(p.price||0)})">Giá</button>
-              <button class="btn" onclick="window._img('${p.id}')">Up hình</button>
-            </div>
-          </div>
+  <div class="container">
+    <div class="panel">
+      <div class="row" style="justify-content:space-between;width:100%">
+        <div>
+          <div style="font-weight:950;font-size:18px">Admin</div>
+          <div class="muted">Chỉ email <b>haivothanh0603@gmail.com</b> được sửa dữ liệu (RLS)</div>
         </div>
-      `).join("") || `<div class="muted">Không có dữ liệu</div>`;
-    }
+        <a class="pill" href="index.html">Về khách</a>
+      </div>
 
-    // expose
-    window._in = (id)=>adjust(id,"IN");
-    window._out = (id)=>adjust(id,"OUT");
-    window._price = (id,cur)=>changePrice(id,cur);
-    window._img = (id)=>changeImage(id);
+      <hr class="sep"/>
 
-    await refreshMe();
-    await load();
-  </script>
+      <div class="row">
+        <input id="email" value="haivothanh0603@gmail.com" />
+        <button class="btn primary" id="sendLink">Gửi link đăng nhập</button>
+        <button class="btn" id="logout">Logout</button>
+        <span class="muted" id="me"></span>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div style="font-weight:950;margin-bottom:8px">Thêm sản phẩm</div>
+      <div class="row">
+        <input id="id" placeholder="ID (vd: 001)" />
+        <input id="oem" placeholder="OEM (vd: P559000)" />
+        <input id="name" placeholder="Tên (vd: Lọc Nhớt Cummin)" />
+        <input id="brand" placeholder="Thương hiệu SP (BOSCH...)" />
+      </div>
+      <div class="row">
+        <input id="category" placeholder="Loại (vd: Lọc dầu / Phanh...)" />
+        <input id="price" type="number" placeholder="Giá bán" />
+        <input id="stock" type="number" placeholder="Số lượng ban đầu" />
+      </div>
+      <div class="row">
+        <input id="info" placeholder="Thông tin: kích thước ren, chiều cao, dùng xe gì..." style="min-width:420px" />
+        <label class="btn">Up hình<input id="file" type="file" accept="image/*" style="display:none"></label>
+        <button class="btn primary" id="add">Thêm</button>
+      </div>
+      <div class="muted" id="addMsg"></div>
+    </div>
+
+    <div class="panel">
+      <div class="row">
+        <input id="q" placeholder="Tìm OEM / tên / thương hiệu..." />
+        <button class="btn" id="reload">Tải lại</button>
+      </div>
+    </div>
+
+    <div id="grid" class="grid"></div>
+
+    <script type="module" src="admin.page.js"></script>
+  </div>
 </body>
 </html>
