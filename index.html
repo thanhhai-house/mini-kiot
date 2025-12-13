@@ -1,1 +1,29 @@
+<!doctype html>
+<html>
+<head>
+  <base target="_top">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="banner">
+    <img src="https://images.unsplash.com/photo-1502877338535-766e1452684a?auto=format&fit=crop&w=1600&q=60">
+  </div>
+
+  <div class="top">
+    <div class="title">Kho Phụ Tùng</div>
+    <a class="pill" href="?page=admin">Admin</a>
+  </div>
+
+  <div class="filters">
+    <input id="q" placeholder="Tìm: ID / OEM / Tên / Thương hiệu...">
+    <select id="category"><option value="">Tất cả loại</option></select>
+    <select id="brand"><option value="">Tất cả thương hiệu</option></select>
+    <button class="btn" id="apply">Lọc</button>
+  </div>
+
+  <div id="grid" class="grid"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>
 
