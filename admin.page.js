@@ -260,4 +260,43 @@ async function load(){
   window._out = (id)=>adjustStock(id,"OUT");
   window._price = (id,cur)=>changePrice(id,cur);
   window._img = (id)=>changeImage(id);
+  async function adjustStock(productId, type) {
+  const { data: { user } } = await sb.auth.getUser();
+  requireAdmin(user);
+
+  const qty = Number(prompt(type === "IN" ? "Nhập số lượng nhập:" : "Nhập số lượng xuất:") || 0);
+  if (!qty || qty <= 0) return;
+
+  const note = prompt("Ghi chú (tuỳ chọn):") || "";
+
+  // 1) lấy tồn hiện tại
+  const { data: p, error: e1 } = await sb.from("products").select("id,stock,oem,name").eq("id", productId).single();
+  if (e1) throw e1;
+
+  const before = Number(p.stock || 0);
+  const after = type === "IN" ? before + qty : before - qty;
+  if (after < 0) return alert("Không đủ tồn để xuất");
+
+  // 2) update tồn
+  const { error: e2 } = await sb.from("products")
+    .update({ stock: after, updated_at: new Date().toISOString() })
+    .eq("id", productId);
+  if (e2) throw e2;
+
+  // 3) ghi lịch sử vào stock_logs
+  const { error: e3 } = await sb.from("stock_logs").insert([{
+    type,
+    product_id: productId,
+    qty,
+    before_stock: before,
+    after_stock: after,
+    note
+  }]);
+  if (e3) throw e3;
+
+  alert("✅ Đã cập nhật tồn & lưu lịch sử");
+  await load();          // reload sản phẩm
+  await loadLogs();      // reload lịch sử
+}
+
 }
