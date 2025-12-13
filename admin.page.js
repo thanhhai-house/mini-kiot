@@ -1,34 +1,28 @@
-import { sb, fmtMoney, esc } from "./app.js";
+import { sb, fmtMoney, esc, stockBadge, toast } from "./app.js";
 
-const ADMIN_EMAIL = "haivothanh0603@gmail.com"; // phải khớp policy SQL
+const ADMIN_EMAIL = "haivothanh0603@gmail.com";
 
-const me = document.getElementById("me");
-const msg = document.getElementById("msg");
+const $ = (id)=>document.getElementById(id);
 
-const fileInput = document.getElementById("file");
-const previewImg = document.getElementById("preview");
-const previewText = document.getElementById("previewText");
+$("loginPass").onclick = loginPass;
+$("sendLink").onclick = sendLink;
+$("logout").onclick = logout;
 
-document.getElementById("login").onclick = login;
-document.getElementById("logout").onclick = logout;
-document.getElementById("add").onclick = addProduct;
-document.getElementById("reload").onclick = load;
+$("file").addEventListener("change", previewFile);
 
-fileInput.addEventListener("change", onPickFile);
+$("upsert").onclick = upsertProduct;
+$("del").onclick = deleteProduct;
+
+$("reload").onclick = loadProducts;
+$("loadLogs").onclick = loadLogs;
 
 await refreshMe();
-await load();
-
-function stockBadge(stock){
-  const s = Number(stock||0);
-  if (s <= 0) return `<span class="badge danger">Hết hàng</span>`;
-  if (s <= 3) return `<span class="badge warn">Sắp hết</span>`;
-  return `<span class="badge ok">Còn hàng</span>`;
-}
+await loadProducts();
+await loadLogs();
 
 async function refreshMe(){
-  const { data: { user } } = await sb.auth.getUser();
-  me.textContent = user ? `Đã login: ${user.email}` : "Chưa login";
+  const { data:{ user } } = await sb.auth.getUser();
+  $("me").textContent = user ? `Đã login: ${user.email}` : "Chưa login";
   return user;
 }
 
@@ -37,333 +31,313 @@ function requireAdmin(user){
   if(user.email !== ADMIN_EMAIL) throw new Error("Sai email admin (không đúng policy).");
 }
 
-async function login(){
+/* ===== LOGIN PASSWORD: có thông báo + nút sáng/loading ===== */
+async function loginPass(){
+  const btn = $("loginPass");
+  const text = $("loginText");
+  const msg = $("authMsg");
+
   msg.textContent = "";
-  const email = document.getElementById("email").value.trim();
-  const password = document.getElementById("password").value;
+  msg.style.color = "";
+
+  const email = $("email").value.trim();
+  const password = $("password").value;
+
+  if(!email || !password){
+    msg.textContent = "❌ Vui lòng nhập email và mật khẩu";
+    msg.style.color = "red";
+    toast("Thiếu email/mật khẩu", "err");
+    return;
+  }
+
+  btn.classList.add("loading");
+  text.textContent = "Đang đăng nhập...";
 
   const { error } = await sb.auth.signInWithPassword({ email, password });
-  if (error) return alert("Login thất bại: " + error.message);
+
+  btn.classList.remove("loading");
+  text.textContent = "Đăng nhập";
+
+  if(error){
+    msg.textContent = "❌ Sai email hoặc mật khẩu";
+    msg.style.color = "red";
+    console.error("LOGIN_ERROR:", error);
+    toast("Sai email hoặc mật khẩu", "err");
+    return;
+  }
+
+  msg.textContent = "✅ Đăng nhập thành công";
+  msg.style.color = "green";
+  toast("Đăng nhập thành công", "ok");
 
   await refreshMe();
-  await load();
+  await loadProducts();
+  await loadLogs();
+}
+
+/* ===== LOGIN EMAIL LINK ===== */
+async function sendLink(){
+  const msg = $("authMsg");
+  msg.textContent = "";
+  msg.style.color = "";
+
+  const email = $("email").value.trim();
+  if(!email){
+    msg.textContent = "❌ Nhập email để gửi link";
+    msg.style.color = "red";
+    toast("Thiếu email", "err");
+    return;
+  }
+
+  const redirectTo = location.origin + location.pathname; // quay lại admin.html
+  const { error } = await sb.auth.signInWithOtp({ email, options:{ emailRedirectTo: redirectTo }});
+
+  if(error){
+    msg.textContent = "❌ Gửi link lỗi: " + error.message;
+    msg.style.color = "red";
+    toast("Gửi link lỗi", "err");
+    console.error(error);
+    return;
+  }
+
+  msg.textContent = "✅ Đã gửi link đăng nhập về email";
+  msg.style.color = "green";
+  toast("Đã gửi link về email", "ok");
 }
 
 async function logout(){
   await sb.auth.signOut();
+  $("authMsg").textContent = "Đã đăng xuất";
+  toast("Đã đăng xuất", "ok");
   await refreshMe();
-  await load();
+  await loadProducts();
+  await loadLogs();
 }
 
-async function onPickFile(){
-  const file = fileInput.files?.[0];
-  if(!file){
-    previewImg.style.display="none";
-    previewText.textContent="Chưa chọn ảnh";
+/* ===== IMAGE PREVIEW ===== */
+function previewFile(){
+  const f = $("file").files?.[0];
+  if(!f){
+    $("preview").style.display="none";
+    $("previewText").textContent="Chưa chọn ảnh";
     return;
   }
-  const url = URL.createObjectURL(file);
-  previewImg.src = url;
-  previewImg.style.display = "block";
-  previewText.textContent = `Đã chọn: ${file.name} (${Math.round(file.size/1024)} KB)`;
+  $("preview").src = URL.createObjectURL(f);
+  $("preview").style.display="block";
+  $("previewText").textContent = `Đã chọn: ${f.name} (${Math.round(f.size/1024)} KB)`;
 }
 
 async function uploadImage(file, productId){
-  // upload ảnh lên Storage, trả về public URL
   const ext = (file.name.split(".").pop() || "jpg").toLowerCase();
-  const path = `${productId}/${Date.now()}.${ext}`; // luôn file mới -> không cần UPDATE policy
-  const { error } = await sb.storage.from("product-images").upload(path, file, { upsert: false });
-  if (error) throw error;
+  const path = `${productId}/${Date.now()}.${ext}`;
 
-  const { data } = sb.storage.from("product-images").getPublicUrl(path);
-  return data.publicUrl;
+  const { error } = await sb.storage.from("product-images").upload(path, file, { upsert:true });
+  if(error) throw error;
+
+  return sb.storage.from("product-images").getPublicUrl(path).data.publicUrl;
 }
 
-async function addProduct(){
-  msg.textContent = "";
-  const { data: { user } } = await sb.auth.getUser();
+/* ===== UPSERT PRODUCT ===== */
+async function upsertProduct(){
+  const { data:{ user } } = await sb.auth.getUser();
   try{
     requireAdmin(user);
 
-    const id = document.getElementById("id").value.trim();
-    const oem = document.getElementById("oem").value.trim();
-    const name = document.getElementById("name").value.trim();
-    const brand = document.getElementById("brand").value.trim();
-    const category = document.getElementById("category").value.trim();
-    const price = Number(document.getElementById("price").value || 0);
-    const stock = Number(document.getElementById("stock").value || 0);
-    const info = document.getElementById("info").value.trim();
-    const file = fileInput.files?.[0];
+    const id = $("id").value.trim();
+    const oem = $("oem").value.trim();
+    const name = $("name").value.trim();
+    const brand = $("brand").value.trim();
+    const category = $("category").value.trim();
+    const info = $("info").value.trim();
+    const price = Number($("price").value || 0);
+    const stock = Number($("stock").value || 0);
 
-    if(!id || !oem || !name) throw new Error("Thiếu ID / OEM / Tên");
+    if(!id || !oem || !name) throw new Error("Thiếu ID/OEM/Tên");
 
-    let image_url = "";
-    if(file){
-      // Preview đã có; upload thật khi bấm Thêm
-      image_url = await uploadImage(file, id);
-    }
+    let image_url = null;
+    const file = $("file").files?.[0];
+    if(file) image_url = await uploadImage(file, id);
 
-    // Insert product
-    const { error } = await sb.from("products").insert([{
-      id, oem, name, category, brand, info,
-      price, stock,
-      image_url,
-      updated_at: new Date().toISOString()
-    }]);
+    const payload = { id, oem, name, brand, category, info, price, stock, updated_at: new Date().toISOString() };
+    if(image_url) payload.image_url = image_url;
 
-    if (error) throw error;
-
-    msg.textContent = "✅ Đã thêm sản phẩm thành công!";
-    // reset form nhanh
-    fileInput.value = "";
-    previewImg.style.display="none";
-    previewText.textContent="Chưa chọn ảnh";
-
-    await load();
-  }catch(e){
-    alert(e.message || e);
-  }
-}
-
-async function adjustStock(id, type){
-  const { data: { user } } = await sb.auth.getUser();
-  try{
-    requireAdmin(user);
-
-    const qty = Number(prompt(type==="IN" ? "Nhập số lượng nhập" : "Nhập số lượng xuất") || 0);
-    if(!qty || qty<=0) return;
-
-    const note = prompt("Ghi chú (tuỳ chọn)") || "";
-
-    const { data: p, error: e1 } = await sb.from("products").select("*").eq("id", id).single();
-    if(e1) throw e1;
-
-    const before = Number(p.stock||0);
-    const after = type==="IN" ? before + qty : before - qty;
-    if(after < 0) throw new Error("Không đủ tồn để xuất");
-
-    const { error: e2 } = await sb.from("products")
-      .update({ stock: after, updated_at: new Date().toISOString() })
-      .eq("id", id);
-    if(e2) throw e2;
-
-    const { error: e3 } = await sb.from("stock_logs")
-      .insert([{ type, product_id: id, qty, before_stock: before, after_stock: after, note }]);
-    if(e3) throw e3;
-
-    await load();
-  }catch(e){
-    alert(e.message || e);
-  }
-}
-
-async function changePrice(id, cur){
-  const { data: { user } } = await sb.auth.getUser();
-  try{
-    requireAdmin(user);
-
-    const price = Number(prompt("Giá mới", String(cur)) ?? NaN);
-    if(!Number.isFinite(price) || price<0) return;
-
-    const { error } = await sb.from("products")
-      .update({ price, updated_at: new Date().toISOString() })
-      .eq("id", id);
+    const { error } = await sb.from("products").upsert(payload, { onConflict:"id" });
     if(error) throw error;
 
-    await load();
+    $("msg").textContent = "✅ Đã lưu (thêm/sửa)";
+    toast("Đã lưu sản phẩm", "ok");
+
+    $("file").value = "";
+    $("preview").style.display="none";
+    $("previewText").textContent="Chưa chọn ảnh";
+
+    await loadProducts();
   }catch(e){
+    toast(e.message || "Lỗi lưu", "err");
     alert(e.message || e);
   }
 }
 
-async function changeImage(id){
-  const { data: { user } } = await sb.auth.getUser();
+async function deleteProduct(){
+  const { data:{ user } } = await sb.auth.getUser();
+  try{
+    requireAdmin(user);
+    const id = $("id").value.trim();
+    if(!id) throw new Error("Nhập ID để xóa");
+    if(!confirm("Xóa sản phẩm " + id + " ?")) return;
+
+    const { error } = await sb.from("products").delete().eq("id", id);
+    if(error) throw error;
+
+    $("msg").textContent = "✅ Đã xóa";
+    toast("Đã xóa sản phẩm", "ok");
+    await loadProducts();
+    await loadLogs();
+  }catch(e){
+    toast(e.message || "Lỗi xóa", "err");
+    alert(e.message || e);
+  }
+}
+
+/* ===== ADJUST STOCK (RPC atomic) ===== */
+async function adjustStock(id, type){
+  const { data:{ user } } = await sb.auth.getUser();
   try{
     requireAdmin(user);
 
-    // chọn file + preview confirm
-    const inp = document.createElement("input");
-    inp.type="file"; inp.accept="image/*";
-    inp.onchange = async ()=>{
-      const file = inp.files?.[0];
-      if(!file) return;
+    const qty = Number(prompt(type==="IN" ? "Nhập số lượng nhập:" : "Nhập số lượng xuất:") || 0);
+    if(!qty || qty<=0) return;
 
-      const local = URL.createObjectURL(file);
-      const ok = confirm("Xác nhận cập nhật hình ảnh mới cho sản phẩm " + id + " ?");
-      if(!ok) return;
+    const note = prompt("Ghi chú (tùy chọn):") || "";
 
-      // upload
-      const url = await uploadImage(file, id);
+    const { data, error } = await sb.rpc("adjust_stock", {
+      p_id: id,
+      p_type: type,
+      p_qty: qty,
+      p_note: note
+    });
+    if(error) throw error;
 
-      // update product image_url
-      const { error } = await sb.from("products")
-        .update({ image_url: url, updated_at: new Date().toISOString() })
-        .eq("id", id);
-      if(error) throw error;
-
-      await load();
-    };
-    inp.click();
+    toast(`OK. Trước ${data?.[0]?.before_stock} → Sau ${data?.[0]?.after_stock}`, "ok");
+    await loadProducts();
+    await loadLogs();
   }catch(e){
+    toast(e.message || "Lỗi nhập/xuất", "err");
     alert(e.message || e);
   }
 }
 
-async function load(){
-  const { data: { user } } = await sb.auth.getUser();
-  const isAdmin = !!user && user.email === ADMIN_EMAIL;
-
-  const k = (document.getElementById("q").value || "").trim();
+/* ===== LOAD PRODUCTS + ADMIN ACTIONS ===== */
+async function loadProducts(){
+  const k = ($("q").value || "").trim();
   let q = sb.from("products").select("*").order("name");
-  if (k) q = q.or(`id.ilike.%${k}%,oem.ilike.%${k}%,name.ilike.%${k}%,brand.ilike.%${k}%,info.ilike.%${k}%`);
+  if(k) q = q.or(`id.ilike.%${k}%,oem.ilike.%${k}%,name.ilike.%${k}%,brand.ilike.%${k}%,info.ilike.%${k}%`);
 
   const { data, error } = await q;
-  if(error) return alert(error.message);
+  if(error) return toast(error.message, "err");
 
-  const grid = document.getElementById("grid");
-  grid.innerHTML = (data||[]).map(p=>`
+  const { data:{ user } } = await sb.auth.getUser();
+  const isAdmin = !!user && user.email === ADMIN_EMAIL;
+
+  $("grid").innerHTML = (data||[]).map(p=>`
     <div class="card">
       ${p.image_url ? `<img src="${p.image_url}">` : `<div class="img">Chưa có hình</div>`}
       <div class="body">
         <div class="name">${esc(p.name)}</div>
-
         <div class="kv">
           <b>ID</b><div>${esc(p.id)}</div>
           <b>OEM</b><div>${esc(p.oem)}</div>
-          <b>Thương hiệu</b><div>${esc(p.brand || "")}</div>
+          <b>Thương hiệu</b><div>${esc(p.brand||"")}</div>
           <b>Giá</b><div><b>${fmtMoney(p.price)}</b></div>
           <b>Số lượng</b><div><b>${Number(p.stock||0)}</b></div>
         </div>
-
         <div class="badges">
           ${stockBadge(p.stock)}
           ${p.category ? `<span class="badge">${esc(p.category)}</span>` : ""}
         </div>
-
         ${p.info ? `<div class="muted" style="margin-top:8px">${esc(p.info)}</div>` : ""}
 
         ${
           isAdmin
           ? `<div class="actions">
-              <button class="btn" onclick="window._in('${p.id}')">Nhập hàng</button>
-              <button class="btn" onclick="window._out('${p.id}')">Xuất hàng</button>
-              <button class="btn" onclick="window._price('${p.id}', ${Number(p.price||0)})">Chỉnh giá</button>
-              <button class="btn" onclick="window._img('${p.id}')">Đổi hình</button>
+              <button class="btn" onclick="window._fill('${esc(p.id)}')">Sửa</button>
+              <button class="btn" onclick="window._in('${esc(p.id)}')">Nhập</button>
+              <button class="btn" onclick="window._out('${esc(p.id)}')">Xuất</button>
             </div>`
-          : `<div class="muted" style="margin-top:10px">🔒 Bạn cần đăng nhập admin để thao tác</div>`
+          : `<div class="muted" style="margin-top:10px">🔒 Đăng nhập admin để thao tác</div>`
         }
       </div>
     </div>
   `).join("") || `<div class="muted">Chưa có dữ liệu.</div>`;
 
-window._in = (id)=>adjustStock(id,"IN");
-window._out = (id)=>adjustStock(id,"OUT");
-  window._price = (id,cur)=>changePrice(id,cur);
-  window._img = (id)=>changeImage(id);
-  async function adjustStock(productId, type) {
-  const { data: { user } } = await sb.auth.getUser();
-  requireAdmin(user);
+  window._in = (id)=>adjustStock(id,"IN");
+  window._out = (id)=>adjustStock(id,"OUT");
+  window._fill = async (id)=>{
+    const { data, error } = await sb.from("products").select("*").eq("id", id).single();
+    if(error) return toast(error.message, "err");
 
-  const qty = Number(prompt(type === "IN" ? "Nhập số lượng nhập:" : "Nhập số lượng xuất:") || 0);
-  if (!qty || qty <= 0) return;
+    $("id").value = data.id;
+    $("oem").value = data.oem;
+    $("name").value = data.name;
+    $("brand").value = data.brand || "";
+    $("category").value = data.category || "";
+    $("info").value = data.info || "";
+    $("price").value = data.price || 0;
+    $("stock").value = data.stock || 0;
 
-  const note = prompt("Ghi chú (tuỳ chọn):") || "";
-
-  // 1) lấy tồn hiện tại
-  const { data: p, error: e1 } = await sb.from("products").select("id,stock,oem,name").eq("id", productId).single();
-  if (e1) throw e1;
-
-  const before = Number(p.stock || 0);
-  const after = type === "IN" ? before + qty : before - qty;
-  if (after < 0) return alert("Không đủ tồn để xuất");
-
-  // 2) update tồn
-  const { error: e2 } = await sb.from("products")
-    .update({ stock: after, updated_at: new Date().toISOString() })
-    .eq("id", productId);
-  if (e2) throw e2;
-
-  // 3) ghi lịch sử vào stock_logs
-  const { error: e3 } = await sb.from("stock_logs").insert([{
-    type,
-    product_id: productId,
-    qty,
-    before_stock: before,
-    after_stock: after,
-    note
-  }]);
-  if (e3) throw e3;
-
-  alert("✅ Đã cập nhật tồn & lưu lịch sử");
-  await load();          // reload sản phẩm
-  await loadLogs();      // reload lịch sử
+    $("msg").textContent = "Đã nạp dữ liệu lên form để sửa.";
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
 }
 
-document.getElementById("log_reload").onclick = loadLogs;
-
+/* ===== LOAD LOGS ===== */
 async function loadLogs(){
-  const { data: { user } } = await sb.auth.getUser();
+  const { data:{ user } } = await sb.auth.getUser();
   const isAdmin = !!user && user.email === ADMIN_EMAIL;
 
-  // chưa login admin thì không cho xem log (đúng yêu cầu chống phá)
   if(!isAdmin){
-    document.getElementById("log_table").innerHTML = `<tr><td class="muted">🔒 Đăng nhập admin để xem lịch sử.</td></tr>`;
-    document.getElementById("log_count").textContent = "";
+    $("logTable").innerHTML = `<tr><td class="muted">🔒 Đăng nhập admin để xem lịch sử.</td></tr>`;
+    $("logCount").textContent = "";
     return;
   }
 
-  const type = document.getElementById("log_type").value || "";
-  const keyword = (document.getElementById("log_q").value || "").trim();
+  const type = $("logType").value || "";
+  const kw = ($("logQ").value || "").trim().toLowerCase();
 
-  // lấy log + join product (để có OEM/Tên)
   let q = sb.from("stock_logs")
-    .select("time,type,qty,before_stock,after_stock,note,product_id,products(oem,name)")
-    .order("time", { ascending: false })
+    .select("time,type,product_id,qty,before_stock,after_stock,note,products(oem,name)")
+    .order("time",{ascending:false})
     .limit(200);
 
   if(type) q = q.eq("type", type);
 
   const { data, error } = await q;
-  if(error) return alert("Load log lỗi: " + error.message);
+  if(error) return toast(error.message, "err");
 
-  // lọc keyword ở client (nhẹ, vì limit 200)
-  const rows = (data || []).filter(x=>{
-    if(!keyword) return true;
-    const hay = `${x.product_id} ${x.products?.oem||""} ${x.products?.name||""}`.toLowerCase();
-    return hay.includes(keyword.toLowerCase());
+  const rows = (data||[]).filter(r=>{
+    if(!kw) return true;
+    const hay = `${r.product_id} ${r.products?.oem||""} ${r.products?.name||""}`.toLowerCase();
+    return hay.includes(kw);
   });
 
-  document.getElementById("log_count").textContent = `${rows.length} dòng (mới nhất)`;
+  $("logCount").textContent = `${rows.length} dòng`;
 
-  const t = document.getElementById("log_table");
-  t.innerHTML = `
-    <tr style="text-align:left;border-bottom:1px solid #d9eefc">
-      <th style="padding:10px">Thời gian</th>
-      <th style="padding:10px">Loại</th>
-      <th style="padding:10px">ID</th>
-      <th style="padding:10px">OEM</th>
-      <th style="padding:10px">Tên</th>
-      <th style="padding:10px">SL</th>
-      <th style="padding:10px">Trước</th>
-      <th style="padding:10px">Sau</th>
-      <th style="padding:10px">Ghi chú</th>
+  $("logTable").innerHTML = `
+    <tr>
+      <th>Thời gian</th><th>Loại</th><th>ID</th><th>OEM</th><th>Tên</th><th>SL</th><th>Trước</th><th>Sau</th><th>Ghi chú</th>
     </tr>
-    ${
-      rows.map(r=>`
-        <tr style="border-bottom:1px solid #eef6ff">
-          <td style="padding:10px">${new Date(r.time).toLocaleString("vi-VN")}</td>
-          <td style="padding:10px;font-weight:900">${r.type}</td>
-          <td style="padding:10px">${r.product_id}</td>
-          <td style="padding:10px">${r.products?.oem||""}</td>
-          <td style="padding:10px">${r.products?.name||""}</td>
-          <td style="padding:10px">${r.qty}</td>
-          <td style="padding:10px">${r.before_stock}</td>
-          <td style="padding:10px">${r.after_stock}</td>
-          <td style="padding:10px">${r.note||""}</td>
-        </tr>
-      `).join("")
-    }
+    ${rows.map(r=>`
+      <tr>
+        <td>${new Date(r.time).toLocaleString("vi-VN")}</td>
+        <td><b>${r.type}</b></td>
+        <td>${esc(r.product_id)}</td>
+        <td>${esc(r.products?.oem||"")}</td>
+        <td>${esc(r.products?.name||"")}</td>
+        <td>${r.qty}</td>
+        <td>${r.before_stock}</td>
+        <td>${r.after_stock}</td>
+        <td>${esc(r.note||"")}</td>
+      </tr>
+    `).join("")}
   `;
-}
-
 }
