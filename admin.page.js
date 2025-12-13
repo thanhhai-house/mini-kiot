@@ -1,32 +1,47 @@
 import { sb } from "./app.js";
 
-const ADMIN_EMAIL = "haivothanh0603@gmail.com"; // đổi cho đúng email admin
-
+const ADMIN_EMAIL = "haivothanh0603@gmail.com"; // đổi nếu bạn dùng email khác
 const $ = (id) => document.getElementById(id);
 
-// BẮT LỖI TOÀN CỤC: nếu có lỗi JS/Import sẽ hiện alert
+function setMsg(text, ok=false){
+  const el = $("authMsg");
+  el.textContent = text;
+  el.style.color = ok ? "green" : "red";
+}
+
+function setLoading(on){
+  const btn = $("loginPass");
+  const t = $("loginText");
+  if(on){
+    btn.classList.add("loading");
+    t.textContent = "Đang đăng nhập...";
+  }else{
+    btn.classList.remove("loading");
+    t.textContent = "Đăng nhập";
+  }
+}
+
 window.addEventListener("error", (e) => {
-  alert("❌ JS lỗi: " + (e.message || e.error));
+  setMsg("❌ JS lỗi: " + (e.message || e.error), false);
   console.error("GLOBAL_ERROR", e);
 });
 
 window.addEventListener("unhandledrejection", (e) => {
-  alert("❌ Promise lỗi: " + (e.reason?.message || e.reason));
+  setMsg("❌ Promise lỗi: " + (e.reason?.message || e.reason), false);
   console.error("UNHANDLED", e);
 });
 
-document.addEventListener("DOMContentLoaded", () => {
-  // xác nhận JS đã chạy
-  const dbg = $("debug");
-  dbg.textContent = "✅ JS đã chạy: admin.page.js loaded";
-  console.log("✅ admin.page.js loaded");
-
-  // gắn sự kiện nút (triệt để)
+document.addEventListener("DOMContentLoaded", async () => {
+  // gắn nút chắc chắn
   $("loginPass").addEventListener("click", loginPass);
   $("sendLink").addEventListener("click", sendLink);
   $("logout").addEventListener("click", logout);
 
-  refreshMe();
+  // check load
+  console.log("✅ admin.page.js loaded");
+  setMsg("Sẵn sàng. Nhấn Đăng nhập để test.", true);
+
+  await refreshMe();
 });
 
 async function refreshMe(){
@@ -34,59 +49,51 @@ async function refreshMe(){
   $("me").textContent = user ? `Đã login: ${user.email}` : "Chưa login";
 }
 
-function setAuthMsg(text, ok){
-  const el = $("authMsg");
-  el.textContent = text;
-  el.style.color = ok ? "green" : "red";
-}
-
-function setLoading(isLoading){
-  const btn = $("loginPass");
-  const text = $("loginText");
-  if(isLoading){
-    btn.classList.add("loading");
-    text.textContent = "Đang đăng nhập...";
-  }else{
-    btn.classList.remove("loading");
-    text.textContent = "Đăng nhập";
-  }
-}
-
 async function loginPass(){
   try{
+    setMsg("", true);
+
     const email = $("email").value.trim();
     const password = $("password").value;
 
     if(!email || !password){
-      setAuthMsg("❌ Vui lòng nhập email và mật khẩu", false);
+      setMsg("❌ Thiếu email hoặc mật khẩu", false);
       return;
     }
 
     setLoading(true);
-    setAuthMsg("", true);
 
-    const { error } = await sb.auth.signInWithPassword({ email, password });
+    const { data, error } = await sb.auth.signInWithPassword({ email, password });
 
     setLoading(false);
 
     if(error){
-      setAuthMsg("❌ Sai email hoặc mật khẩu (" + error.message + ")", false);
+      // lỗi thật supabase
+      setMsg("❌ Login lỗi: " + error.message, false);
       console.error("LOGIN_ERROR", error);
       return;
     }
 
-    // check admin email (đúng phân quyền)
-    const { data: { user } } = await sb.auth.getUser();
-    if(user?.email !== ADMIN_EMAIL){
-      setAuthMsg("⚠️ Login được nhưng không đúng email admin policy!", false);
+    // lấy user sau login
+    const { data: u } = await sb.auth.getUser();
+    const user = u?.user;
+
+    if(!user){
+      setMsg("⚠️ Login có vẻ thành công nhưng chưa có session. Kiểm tra Site URL/Redirect URL.", false);
+      return;
+    }
+
+    if(user.email !== ADMIN_EMAIL){
+      setMsg("⚠️ Login OK nhưng email không phải admin policy: " + user.email, false);
     }else{
-      setAuthMsg("✅ Đăng nhập thành công", true);
+      setMsg("✅ Đăng nhập admin thành công: " + user.email, true);
     }
 
     await refreshMe();
+
   }catch(e){
     setLoading(false);
-    setAuthMsg("❌ Lỗi: " + (e.message || e), false);
+    setMsg("❌ Exception: " + (e.message || e), false);
     console.error(e);
   }
 }
@@ -94,21 +101,27 @@ async function loginPass(){
 async function sendLink(){
   const email = $("email").value.trim();
   if(!email){
-    setAuthMsg("❌ Nhập email để gửi link", false);
+    setMsg("❌ Nhập email để gửi link", false);
     return;
   }
-  const redirectTo = location.origin + location.pathname; // quay lại admin.html
-  const { error } = await sb.auth.signInWithOtp({ email, options:{ emailRedirectTo: redirectTo }});
+
+  const redirectTo = location.origin + location.pathname; // admin.html
+  const { error } = await sb.auth.signInWithOtp({
+    email,
+    options: { emailRedirectTo: redirectTo }
+  });
+
   if(error){
-    setAuthMsg("❌ Gửi link lỗi: " + error.message, false);
+    setMsg("❌ Gửi link lỗi: " + error.message, false);
     console.error(error);
     return;
   }
-  setAuthMsg("✅ Đã gửi link đăng nhập về email", true);
+
+  setMsg("✅ Đã gửi link đăng nhập về email. Mở mail và bấm link.", true);
 }
 
 async function logout(){
   await sb.auth.signOut();
-  setAuthMsg("Đã đăng xuất", true);
+  setMsg("✅ Đã đăng xuất", true);
   await refreshMe();
 }
