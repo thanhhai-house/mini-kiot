@@ -1,1 +1,7 @@
+{
+  "timeZone": "Asia/Ho_Chi_Minh",
+  "runtimeVersion": "V8",
+  "exceptionLogging": "STACKDRIVER",
+  "webapp": { "executeAs": "USER_DEPLOYING", "access": "ANYONE" }
+}
 
