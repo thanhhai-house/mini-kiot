@@ -256,8 +256,8 @@ async function load(){
     </div>
   `).join("") || `<div class="muted">Chưa có dữ liệu.</div>`;
 
-  window._in = (id)=>adjustStock(id,"IN");
-  window._out = (id)=>adjustStock(id,"OUT");
+window._in = (id)=>adjustStock(id,"IN");
+window._out = (id)=>adjustStock(id,"OUT");
   window._price = (id,cur)=>changePrice(id,cur);
   window._img = (id)=>changeImage(id);
   async function adjustStock(productId, type) {
@@ -298,5 +298,6 @@ async function load(){
   await load();          // reload sản phẩm
   await loadLogs();      // reload lịch sử
 }
+
 
 }
