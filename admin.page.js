@@ -299,5 +299,71 @@ window._out = (id)=>adjustStock(id,"OUT");
   await loadLogs();      // reload lịch sử
 }
 
+document.getElementById("log_reload").onclick = loadLogs;
+
+async function loadLogs(){
+  const { data: { user } } = await sb.auth.getUser();
+  const isAdmin = !!user && user.email === ADMIN_EMAIL;
+
+  // chưa login admin thì không cho xem log (đúng yêu cầu chống phá)
+  if(!isAdmin){
+    document.getElementById("log_table").innerHTML = `<tr><td class="muted">🔒 Đăng nhập admin để xem lịch sử.</td></tr>`;
+    document.getElementById("log_count").textContent = "";
+    return;
+  }
+
+  const type = document.getElementById("log_type").value || "";
+  const keyword = (document.getElementById("log_q").value || "").trim();
+
+  // lấy log + join product (để có OEM/Tên)
+  let q = sb.from("stock_logs")
+    .select("time,type,qty,before_stock,after_stock,note,product_id,products(oem,name)")
+    .order("time", { ascending: false })
+    .limit(200);
+
+  if(type) q = q.eq("type", type);
+
+  const { data, error } = await q;
+  if(error) return alert("Load log lỗi: " + error.message);
+
+  // lọc keyword ở client (nhẹ, vì limit 200)
+  const rows = (data || []).filter(x=>{
+    if(!keyword) return true;
+    const hay = `${x.product_id} ${x.products?.oem||""} ${x.products?.name||""}`.toLowerCase();
+    return hay.includes(keyword.toLowerCase());
+  });
+
+  document.getElementById("log_count").textContent = `${rows.length} dòng (mới nhất)`;
+
+  const t = document.getElementById("log_table");
+  t.innerHTML = `
+    <tr style="text-align:left;border-bottom:1px solid #d9eefc">
+      <th style="padding:10px">Thời gian</th>
+      <th style="padding:10px">Loại</th>
+      <th style="padding:10px">ID</th>
+      <th style="padding:10px">OEM</th>
+      <th style="padding:10px">Tên</th>
+      <th style="padding:10px">SL</th>
+      <th style="padding:10px">Trước</th>
+      <th style="padding:10px">Sau</th>
+      <th style="padding:10px">Ghi chú</th>
+    </tr>
+    ${
+      rows.map(r=>`
+        <tr style="border-bottom:1px solid #eef6ff">
+          <td style="padding:10px">${new Date(r.time).toLocaleString("vi-VN")}</td>
+          <td style="padding:10px;font-weight:900">${r.type}</td>
+          <td style="padding:10px">${r.product_id}</td>
+          <td style="padding:10px">${r.products?.oem||""}</td>
+          <td style="padding:10px">${r.products?.name||""}</td>
+          <td style="padding:10px">${r.qty}</td>
+          <td style="padding:10px">${r.before_stock}</td>
+          <td style="padding:10px">${r.after_stock}</td>
+          <td style="padding:10px">${r.note||""}</td>
+        </tr>
+      `).join("")
+    }
+  `;
+}
 
 }
